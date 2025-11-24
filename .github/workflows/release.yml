@@ -74,7 +74,7 @@ jobs:
 
           # 3. Rename and add extension for Windows
           if [ "${{ matrix.GOOS }}" == "windows" ]; then
-            mv PAARAbot "${BIN_NAME}.exe"
+            mv PAARAbot.exe "${BIN_NAME}.exe"
           else
             mv PAARAbot "${BIN_NAME}"
           fi
