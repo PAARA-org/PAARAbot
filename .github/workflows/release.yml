@@ -1,3 +1,36 @@
+# .github/workflows/release.yml
+name: 🚀 GoReleaser
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on tags like v1.0.0
+
+permissions:
+  contents: write # Needed to create the GitHub Release
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # IMPORTANT: Required for GoReleaser to get Git history
+
+      - name: 🛠️ Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: 📦 Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          # runs 'goreleaser release --clean'
+          args: release --clean
+        env:
+          # GITHUB_TOKEN is required for authentication
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 name: 📦 Build and Release Binaries
 
 on:
