@@ -1,0 +1,6 @@
+# This is a sample file containing callsigns that must match this format:
+# * the commented files are ignored
+# * one callsign per line
+# 
+KN6YUH
+AK6EU
