@@ -4,6 +4,15 @@ PAARAbot is a Discord bot written in GoLang (<https://golang.org>) using the Dis
 
 On startup, the bot reads from a list of ham callsigns (Club members, or Discord server members), and then periodically retrieves the list of active SOTA and POTA spots. If it finds any spots for the tracked callsigns, it will post a Discord message containing the `Call Sign`, `Park or Peak`, `Frequency` and `Mode`.
 
+# Install
+
+You have two options:
+1. Get the GitHub built binaries for your platform from the releases page (<https://github.com/PAARA-org/PAARAbot/releases>).
+2. Clone the Git repository and build the binary yourself
+   * `git clone git@github.com:PAARA-org/PAARAbot.git`
+   * `cd PAARAbot`
+   * `./build.sh`
+
 # Usage
 
 Sample usage:
