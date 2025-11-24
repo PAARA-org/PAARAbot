@@ -1,75 +1,40 @@
-# .github/workflows/release.yml
-name: 🚀 GoReleaser
+name: 📦 Automated Cross-Platform Release
 
 on:
-  push:
-    tags:
-      - 'v*' # Trigger on tags like v1.0.0
-
-permissions:
-  contents: write # Needed to create the GitHub Release
-
-jobs:
-  goreleaser:
-    runs-on: ubuntu-latest
-    steps:
-      - name: ⬇️ Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # IMPORTANT: Required for GoReleaser to get Git history
-
-      - name: 🛠️ Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
-      - name: 📦 Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          # runs 'goreleaser release --clean'
-          args: release --clean
-        env:
-          # GITHUB_TOKEN is required for authentication
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-name: 📦 Build and Release Binaries
-
-on:
+  # Trigger this workflow only when a new tag is pushed (e.g., v1.0.0)
   push:
     tags:
       - 'v*'
 
+permissions:
+  # Needed for the softprops/action-gh-release action to create the release
+  contents: write
+
 jobs:
   build-binaries:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+    
     strategy:
       matrix:
         # Define the target OS, Architecture, and ARM version
         include:
           # --- Linux Targets ---
-          # 1. Linux AMD64
           - GOOS: linux
             GOARCH: amd64
             GOARM: ""
-          # 2. Linux ARMv6 (e.g., Raspberry Pi 1, Pi Zero)
           - GOOS: linux
             GOARCH: arm
             GOARM: "6"
-          # 3. Linux ARMv7 (e.g., Raspberry Pi 2/3/4/Zero 2 in 32-bit mode)
           - GOOS: linux
             GOARCH: arm
             GOARM: "7"
             
           # --- Windows Target ---
-          # 4. Windows AMD64
           - GOOS: windows
             GOARCH: amd64
             GOARM: ""
 
-          # --- macOS Target ---
-          # 5. macOS (Darwin) AMD64
+          # --- macOS Target (Darwin) ---
           - GOOS: darwin
             GOARCH: amd64
             GOARM: ""
@@ -78,7 +43,7 @@ jobs:
     steps:
       - name: ⬇️ Checkout Repository
         uses: actions/checkout@v4
-        
+
       - name: 🛠️ Set up Go
         uses: actions/setup-go@v5
         with:
@@ -87,7 +52,7 @@ jobs:
       - name: ⚙️ Make build.sh executable
         run: chmod +x build.sh
 
-      - name: 🏗️ Build Binary (${{ matrix.GOOS }}/${{ matrix.GOARCH }}/${{ matrix.GOARM }})
+      - name: 🏗️ Build Binary (${{ matrix.GOOS }}/${{ matrix.GOARCH }}${{ matrix.GOARM }})
         env:
           GOOS: ${{ matrix.GOOS }}
           GOARCH: ${{ matrix.GOARCH }}
@@ -102,13 +67,15 @@ jobs:
             BIN_NAME="PAARAbot-${{ matrix.GOOS }}-${{ matrix.GOARCH }}"
           fi
 
-          # 2. Execute the build script
+          # 2. Execute the build script. Assumes build.sh outputs to PAARAbot
           ./build.sh
 
           # 3. Rename and add extension for Windows
           if [ "${{ matrix.GOOS }}" == "windows" ]; then
-            mv PAARAbot.exe "${BIN_NAME}.exe"
+            # Assuming build.sh creates 'PAARAbot.exe' for Windows
+            mv PAARAbot.exe "${BIN_NAME}.exe" 
           else
+            # Assuming build.sh creates 'PAARAbot' for Linux/macOS
             mv PAARAbot "${BIN_NAME}"
           fi
 
@@ -116,7 +83,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          # This pattern will match all created binaries (with or without .exe)
-          files: PAARAbot*
+          files: PAARAbot* # Matches all created binaries
           draft: false
           prerelease: false
