@@ -45,6 +45,9 @@ func main() {
 		} else {
 			log.Println("Successfully parsed ", len(hams.CallSigns), "callsigns from ", *hamfile)
 		}
+		if len(hams.CallSigns) == 0 {
+			log.Fatal("\"", *hamfile, "\" doesn't contain any ham callsigns. Exiting.") 
+		}
 	} else {
 		log.Fatal("Ham file not specified. Please rerun the program with -hamfile=club_call_signs.txt or use -help for more info.")
 	}
@@ -67,5 +70,5 @@ func main() {
 	bot.ThrottleTime = *postThrottleTime
 
 	// Let's run the bot!
-	// bot.Run()
+	bot.Run()
 }
