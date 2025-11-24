@@ -1,0 +1,89 @@
+name: 📦 Build and Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-binaries:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    strategy:
+      matrix:
+        # Define the target OS, Architecture, and ARM version
+        include:
+          # --- Linux Targets ---
+          # 1. Linux AMD64
+          - GOOS: linux
+            GOARCH: amd64
+            GOARM: ""
+          # 2. Linux ARMv6 (e.g., Raspberry Pi 1, Pi Zero)
+          - GOOS: linux
+            GOARCH: arm
+            GOARM: "6"
+          # 3. Linux ARMv7 (e.g., Raspberry Pi 2/3/4/Zero 2 in 32-bit mode)
+          - GOOS: linux
+            GOARCH: arm
+            GOARM: "7"
+            
+          # --- Windows Target ---
+          # 4. Windows AMD64
+          - GOOS: windows
+            GOARCH: amd64
+            GOARM: ""
+
+          # --- macOS Target ---
+          # 5. macOS (Darwin) AMD64
+          - GOOS: darwin
+            GOARCH: amd64
+            GOARM: ""
+
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: 🛠️ Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: ⚙️ Make build.sh executable
+        run: chmod +x build.sh
+
+      - name: 🏗️ Build Binary (${{ matrix.GOOS }}/${{ matrix.GOARCH }}/${{ matrix.GOARM }})
+        env:
+          GOOS: ${{ matrix.GOOS }}
+          GOARCH: ${{ matrix.GOARCH }}
+          GOARM: ${{ matrix.GOARM }} # Used only for GOARCH=arm
+        run: |
+          # 1. Determine the base binary name
+          if [ "${{ matrix.GOARCH }}" == "arm" ]; then
+            # Specific name for ARM builds (e.g., PAARAbot-linux-armv6)
+            BIN_NAME="PAARAbot-${{ matrix.GOOS }}-${{ matrix.GOARCH }}v${{ matrix.GOARM }}"
+          else
+            # Standard name (e.g., PAARAbot-windows-amd64)
+            BIN_NAME="PAARAbot-${{ matrix.GOOS }}-${{ matrix.GOARCH }}"
+          fi
+
+          # 2. Execute the build script
+          ./build.sh
+
+          # 3. Rename and add extension for Windows
+          if [ "${{ matrix.GOOS }}" == "windows" ]; then
+            mv PAARAbot "${BIN_NAME}.exe"
+          else
+            mv PAARAbot "${BIN_NAME}"
+          fi
+
+      - name: ⬆️ Upload Binary as Release Asset
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          # This pattern will match all created binaries (with or without .exe)
+          files: PAARAbot*
+          draft: false
+          prerelease: false
