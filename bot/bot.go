@@ -75,9 +75,11 @@ func Run() {
 			logger.Println("Got ", len(sotaSpots), " SOTA spots.")
 		}
 
+		currentCallSigns := hams.GetCallSigns()
+
 		// Go through the POTA spots and see if any of them is for a member callsign
 		for _, v := range potaSpots {
-			if slices.Contains(hams.CallSigns, v.Activator) {
+			if slices.Contains(currentCallSigns, v.Activator) {
 				activation := fmt.Sprintf("%s at %s (%s %s)", v.Activator, v.Reference, v.Name, v.LocationDesc)
 				message := fmt.Sprintf("%s at %s (%s %s) on %sKHz %s [%s] \n", v.Activator, v.Reference, v.Name, v.LocationDesc, v.Frequency, v.Mode, v.Comments)
 				if limiter.Allow(activation) {
@@ -92,7 +94,7 @@ func Run() {
 		}
 		// Do the same for the SOTA spots
 		for _, v := range sotaSpots {
-			if slices.Contains(hams.CallSigns, v.ActivatorCallsign) {
+			if slices.Contains(currentCallSigns, v.ActivatorCallsign) {
 				activation := fmt.Sprintf("%s at %s (%s - %dft)", v.ActivatorCallsign, v.SummitCode, v.SummitName, v.AltFt)
 				message := fmt.Sprintf("%s at %s (%s - %dft/%dm) on %.3fMHz %s [%s] \n", v.ActivatorCallsign, v.SummitCode, v.SummitName, v.AltFt, v.AltM, v.Frequency, v.Mode, v.Comments)
 				if limiter.Allow(activation) {

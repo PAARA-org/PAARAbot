@@ -20,6 +20,8 @@ Sample usage:
 ```bash
 $ ./PAARAbot \
   -hamfile=paara_members.txt \
+  -csvURL="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" \
+  -refreshInterval=12h \
   -sotacsv=sota_pota.csv \
   -postThrottleTime=4.5h \
   -spotCheckInterval=3m \
@@ -28,7 +30,7 @@ $ ./PAARAbot \
   -sotaChannelID=yyy
 ```
 
-The **paara_members.txt** file is mandatory and must contain at least one callsign. The **sota_pota.csv** file is optional.
+The **paara_members.txt** file or the **-csvURL** flag (or both) must be provided to load callsigns. The **sota_pota.csv** file is optional.
 
 ## `-token`, `-potaChannelID` and `-sotaChannelID`
 
@@ -57,6 +59,16 @@ KN6YUH
 AK6EU
 ```
 
+## `-csvURL`
+
+This flag allows fetching callsigns from a remote CSV file, such as a published Google Sheet shared with anyone with the link (this is to avoid having to set up authentication). The bot expects the callsigns to be in the first column and will skip the first row (header).
+
+If a Google Sheet URL in "edit" mode is provided, the bot will automatically attempt to convert it to an "export" URL in CSV format.
+
+## `-refreshInterval`
+
+This flag determines how often the bot will re-fetch the callsigns from the `-csvURL`. The default is 8 hours.
+
 ## `-spotCheckInterval`
 
 This flag controls the interval for checking the POTA and SOTA for new spots. The default is 2 minutes, and I'd recommend not setting is to something shorter than this, to avoid getting blocked for refreshing the page too often.
@@ -73,12 +85,16 @@ It's highly recommended to not reduce this flag to less than 1 hour, as that cou
 % ./PAARAbot --helpshort
 flag provided but not defined: -helpshort
 Usage of ./PAARAbot:
+  -csvURL string
+    	URL to a CSV file containing ham callsigns (e.g. Google Sheet export link).
   -hamfile string
     	File containing the list of ham callsigns to check for activations.
   -postThrottleTime duration
     	How often to re-post the same spot. (default 4h0m0s)
   -potaChannelID string
     	POTA channel ID from Discord.
+  -refreshInterval duration
+    	How often to refresh the callsigns from the CSV URL. (default 8h0m0s)
   -sotaChannelID string
     	SOTA channel ID from Discord.
   -sotacsv string
