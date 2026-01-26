@@ -44,6 +44,8 @@ func Run() {
 
 	limiter := NewRateLimiter()
 
+	discord.AddHandler(messageHandler)
+
 	// open session
 	err = discord.Open()
 	if err != nil {
@@ -80,6 +82,15 @@ func Run() {
 		// Go through the POTA spots and see if any of them is for a member callsign
 		for _, v := range potaSpots {
 			if slices.Contains(currentCallSigns, v.Activator) {
+				updateCache(v.Activator, DisplaySpot{
+					ID:        fmt.Sprintf("POTA-%d", v.SpotID),
+					Source:    "POTA",
+					Time:      v.SpotTime,
+					Location:  fmt.Sprintf("%s (%s %s)", v.Reference, v.Name, v.LocationDesc),
+					Frequency: v.Frequency,
+					Mode:      v.Mode,
+				})
+
 				activation := fmt.Sprintf("%s at %s (%s %s)", v.Activator, v.Reference, v.Name, v.LocationDesc)
 				message := fmt.Sprintf("%s at %s (%s %s) on %sKHz %s [%s] \n", v.Activator, v.Reference, v.Name, v.LocationDesc, v.Frequency, v.Mode, v.Comments)
 				if limiter.Allow(activation) {
@@ -95,6 +106,15 @@ func Run() {
 		// Do the same for the SOTA spots
 		for _, v := range sotaSpots {
 			if slices.Contains(currentCallSigns, v.ActivatorCallsign) {
+				updateCache(v.ActivatorCallsign, DisplaySpot{
+					ID:        fmt.Sprintf("SOTA-%d", v.Id),
+					Source:    "SOTA",
+					Time:      v.TimeStamp,
+					Location:  fmt.Sprintf("%s (%s - %dft)", v.SummitCode, v.SummitName, v.AltFt),
+					Frequency: fmt.Sprintf("%.3fMHz", v.Frequency),
+					Mode:      v.Mode,
+				})
+
 				activation := fmt.Sprintf("%s at %s (%s - %dft)", v.ActivatorCallsign, v.SummitCode, v.SummitName, v.AltFt)
 				message := fmt.Sprintf("%s at %s (%s - %dft/%dm) on %.3fMHz %s [%s] \n", v.ActivatorCallsign, v.SummitCode, v.SummitName, v.AltFt, v.AltM, v.Frequency, v.Mode, v.Comments)
 				if limiter.Allow(activation) {

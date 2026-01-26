@@ -48,7 +48,7 @@ func TestFetchFromWeb(t *testing.T) {
 		fmt.Fprintln(w, "Header1,Header2") // Header
 		fmt.Fprintln(w, "K6POTA,Test Park")
 		fmt.Fprintln(w, "W6SOTA,Test Peak")
-		fmt.Fprintln(w, "") // Empty line
+		fmt.Fprintln(w, "")            // Empty line
 		fmt.Fprintln(w, ",Empty Call") // Empty call
 	}))
 	defer ts.Close()
