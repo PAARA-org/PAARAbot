@@ -29,6 +29,7 @@ func updateCache(callsign string, spot DisplaySpot) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 
+	callsign = strings.ToUpper(callsign)
 	spots := spotCache[callsign]
 
 	// Check for duplicate ID
