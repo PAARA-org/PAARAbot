@@ -85,7 +85,7 @@ func Run() {
 				updateCache(v.Activator, DisplaySpot{
 					ID:        fmt.Sprintf("POTA-%d", v.SpotID),
 					Source:    "POTA",
-					Time:      v.SpotTime,
+					Time:      parseAndFormatTime(v.SpotTime),
 					Location:  fmt.Sprintf("%s (%s %s)", v.Reference, v.Name, v.LocationDesc),
 					Frequency: v.Frequency,
 					Mode:      v.Mode,
@@ -109,7 +109,7 @@ func Run() {
 				updateCache(v.ActivatorCallsign, DisplaySpot{
 					ID:        fmt.Sprintf("SOTA-%d", v.Id),
 					Source:    "SOTA",
-					Time:      v.TimeStamp,
+					Time:      parseAndFormatTime(v.TimeStamp),
 					Location:  fmt.Sprintf("%s (%s - %dft)", v.SummitCode, v.SummitName, v.AltFt),
 					Frequency: fmt.Sprintf("%.3fMHz", v.Frequency),
 					Mode:      v.Mode,

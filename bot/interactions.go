@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/PAARA-org/PAARAbot/pota"
 	"github.com/PAARA-org/PAARAbot/sota"
@@ -124,10 +125,40 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Most recent 10 spots for **%s**:\n", callsign))
 	for _, spot := range spots {
-		sb.WriteString(fmt.Sprintf("- **%s** [%s] %s %s %s (%s)\n", spot.Source, spot.Time, spot.Location, spot.Frequency, spot.Mode, spot.ID))
+		sb.WriteString(fmt.Sprintf("- **%s** [%s] %s %s %s\n", spot.Source, spot.Time, spot.Location, spot.Frequency, spot.Mode))
 	}
 
 	s.ChannelMessageSend(m.ChannelID, sb.String())
+}
+
+func parseAndFormatTime(rawTime string) string {
+	formats := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05",
+		time.RFC3339,
+	}
+
+	var t time.Time
+	var err error
+	for _, f := range formats {
+		// POTA/SOTA APIs usually provide UTC times.
+		// If the format doesn't have a timezone, we assume UTC.
+		if !strings.Contains(f, "Z") && !strings.Contains(f, "-07") {
+			t, err = time.ParseInLocation(f, rawTime, time.UTC)
+		} else {
+			t, err = time.Parse(f, rawTime)
+		}
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		return rawTime
+	}
+
+	return t.Local().Format("01/02 15:04")
 }
 
 func fetchFreshSpots(callsign string) []DisplaySpot {
@@ -141,7 +172,7 @@ func fetchFreshSpots(callsign string) []DisplaySpot {
 				results = append(results, DisplaySpot{
 					ID:        fmt.Sprintf("POTA-%d", v.SpotID),
 					Source:    "POTA",
-					Time:      v.SpotTime,
+					Time:      parseAndFormatTime(v.SpotTime),
 					Location:  fmt.Sprintf("%s (%s %s)", v.Reference, v.Name, v.LocationDesc),
 					Frequency: v.Frequency,
 					Mode:      v.Mode,
@@ -159,7 +190,7 @@ func fetchFreshSpots(callsign string) []DisplaySpot {
 				results = append(results, DisplaySpot{
 					ID:        fmt.Sprintf("SOTA-%d", v.Id),
 					Source:    "SOTA",
-					Time:      v.TimeStamp,
+					Time:      parseAndFormatTime(v.TimeStamp),
 					Location:  fmt.Sprintf("%s (%s)", v.SummitCode, v.SummitName),
 					Frequency: freq,
 					Mode:      v.Mode,
