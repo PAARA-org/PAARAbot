@@ -116,6 +116,24 @@ The mapping from PEAK to PARK is done by parsing this CSV: https://raw.githubuse
 
 You will need to fetch a copy of this CSV file locally and point the bot at it using the `-sotacsv` flag.
 
+# User Interactions
+
+Users can interact with the bot directly in the Discord channels configured for POTA or SOTA spots.
+
+## Retrieve Recent Spots
+
+If you want to check the recent activity of a specific callsign (even if it's not currently active), you can mention the bot followed by the callsign.
+
+**Usage:** `@PAARAbot <CALLSIGN>`
+
+**Example:**
+`@PAARAbot K6STR`
+
+**Behavior:**
+1. The bot checks its local cache for the last 10 spotting events for that callsign.
+2. If the cache is empty (e.g. the bot restarted or the user hasn't been active recently), it will automatically fetch the latest spot lists from POTA and SOTA to find any recent activity.
+3. It will reply with a list of the 10 most recent spots, including the source (POTA/SOTA), time, location, frequency, and mode.
+
 # Credits
 
 This is a Discord bot initially based on the example provided at https://medium.com/@mssandeepkamath/building-a-simple-discord-bot-using-go-12bfca31ad5d.
