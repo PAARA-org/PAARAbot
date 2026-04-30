@@ -130,9 +130,9 @@ If you want to check the recent activity of a specific callsign (even if it's no
 `@PAARAbot K6STR`
 
 **Behavior:**
-1. The bot checks its local cache for the last 10 spotting events for that callsign.
-2. If the cache is empty (e.g. the bot restarted or the user hasn't been active recently), it will automatically fetch the latest spot lists from POTA and SOTA to find any recent activity.
-3. It will reply with a list of the 10 most recent spots, including the source (POTA/SOTA), time, location, frequency, and mode.
+1. The bot checks its local cache for the last 10 distinct spotting events for that callsign. Consecutive re-spots of the same activation (same source, location, frequency, mode and comment) are collapsed into a single entry whose timestamp is bumped to the latest observation, so a long stable activation shows up once rather than crowding out the history. A genuine change followed by a return — e.g. `14044.0` → `14044.1` → `14044.0` — is preserved as three entries.
+2. If the cache is empty (e.g. the bot restarted or the user hasn't been active recently), it will automatically fetch the latest spot lists from POTA and SOTA to find any recent activity. The same dedup is applied to the fresh results.
+3. It will reply with the 10 most recent entries in chronological order (newest first), including the source (POTA/SOTA), time, location, frequency, and mode.
 
 # Credits
 
