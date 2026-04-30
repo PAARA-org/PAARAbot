@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -11,13 +12,16 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+const maxCachedSpots = 10
+
 type DisplaySpot struct {
 	ID        string
 	Source    string
-	Time      string
+	RawTime   time.Time
 	Location  string
 	Frequency string
 	Mode      string
+	Comment   string
 }
 
 var (
@@ -25,30 +29,17 @@ var (
 	cacheMu   sync.RWMutex
 )
 
-// updateCache adds a spot to the cache for a callsign, avoiding duplicates.
+// updateCache adds a spot to the cache for a callsign. Chronologically
+// consecutive duplicates (same source, location, frequency, mode and comment)
+// are collapsed into a single entry whose timestamp is bumped to the latest
+// observation.
 func updateCache(callsign string, spot DisplaySpot) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 
 	callsign = strings.ToUpper(callsign)
-	spots := spotCache[callsign]
-
-	// Check for duplicate ID
-	for _, s := range spots {
-		if s.ID == spot.ID {
-			return // Already exists
-		}
-	}
-
-	// Prepend new spot
-	spots = append([]DisplaySpot{spot}, spots...)
-
-	// Keep last 10
-	if len(spots) > 10 {
-		spots = spots[:10]
-	}
-
-	spotCache[callsign] = spots
+	spots := append(spotCache[callsign], spot)
+	spotCache[callsign] = dedupAndSortSpots(spots, maxCachedSpots)
 }
 
 // getCachedSpots returns a copy of cached spots for a callsign.
@@ -63,6 +54,51 @@ func getCachedSpots(callsign string) []DisplaySpot {
 		return result
 	}
 	return nil
+}
+
+// spotsMatch reports whether two spots describe the same activation, so a
+// later one is just a re-spot rather than a new entry worth recording.
+func spotsMatch(a, b DisplaySpot) bool {
+	return a.Source == b.Source &&
+		a.Location == b.Location &&
+		a.Frequency == b.Frequency &&
+		a.Mode == b.Mode &&
+		a.Comment == b.Comment
+}
+
+// dedupAndSortSpots sorts spots chronologically, collapses runs of consecutive
+// duplicates onto the latest timestamp, and returns the most recent entries
+// first, capped at limit.
+func dedupAndSortSpots(spots []DisplaySpot, limit int) []DisplaySpot {
+	if len(spots) == 0 {
+		return spots
+	}
+
+	sort.SliceStable(spots, func(i, j int) bool {
+		return spots[i].RawTime.Before(spots[j].RawTime)
+	})
+
+	deduped := make([]DisplaySpot, 0, len(spots))
+	for _, s := range spots {
+		if n := len(deduped); n > 0 && spotsMatch(deduped[n-1], s) {
+			if s.RawTime.After(deduped[n-1].RawTime) {
+				deduped[n-1].RawTime = s.RawTime
+				deduped[n-1].ID = s.ID
+			}
+			continue
+		}
+		deduped = append(deduped, s)
+	}
+
+	// Reverse to newest-first.
+	for i, j := 0, len(deduped)-1; i < j; i, j = i+1, j-1 {
+		deduped[i], deduped[j] = deduped[j], deduped[i]
+	}
+
+	if len(deduped) > limit {
+		deduped = deduped[:limit]
+	}
+	return deduped
 }
 
 func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -123,15 +159,17 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// Format output
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Most recent 10 spots for **%s**:\n", callsign))
+	sb.WriteString(fmt.Sprintf("Most recent %d spots for **%s**:\n", maxCachedSpots, callsign))
 	for _, spot := range spots {
-		sb.WriteString(fmt.Sprintf("- **%s** [%s] %s %s %s\n", spot.Source, spot.Time, spot.Location, spot.Frequency, spot.Mode))
+		sb.WriteString(fmt.Sprintf("- **%s** [%s] %s %s %s\n", spot.Source, formatSpotTime(spot.RawTime), spot.Location, spot.Frequency, spot.Mode))
 	}
 
 	s.ChannelMessageSend(m.ChannelID, sb.String())
 }
 
-func parseAndFormatTime(rawTime string) string {
+// parseRawTime parses a POTA/SOTA timestamp into a time.Time. Naive
+// timestamps are assumed to be UTC. A zero time is returned on parse failure.
+func parseRawTime(rawTime string) time.Time {
 	formats := []string{
 		"2006-01-02 15:04:05",
 		"2006-01-02T15:04:05Z",
@@ -139,25 +177,27 @@ func parseAndFormatTime(rawTime string) string {
 		time.RFC3339,
 	}
 
-	var t time.Time
-	var err error
 	for _, f := range formats {
-		// POTA/SOTA APIs usually provide UTC times.
-		// If the format doesn't have a timezone, we assume UTC.
+		var (
+			t   time.Time
+			err error
+		)
 		if !strings.Contains(f, "Z") && !strings.Contains(f, "-07") {
 			t, err = time.ParseInLocation(f, rawTime, time.UTC)
 		} else {
 			t, err = time.Parse(f, rawTime)
 		}
 		if err == nil {
-			break
+			return t
 		}
 	}
+	return time.Time{}
+}
 
-	if err != nil {
-		return rawTime
+func formatSpotTime(t time.Time) string {
+	if t.IsZero() {
+		return "?"
 	}
-
 	return t.Local().Format("01/02 15:04")
 }
 
@@ -172,10 +212,11 @@ func fetchFreshSpots(callsign string) []DisplaySpot {
 				results = append(results, DisplaySpot{
 					ID:        fmt.Sprintf("POTA-%d", v.SpotID),
 					Source:    "POTA",
-					Time:      parseAndFormatTime(v.SpotTime),
+					RawTime:   parseRawTime(v.SpotTime),
 					Location:  fmt.Sprintf("%s (%s %s)", v.Reference, v.Name, v.LocationDesc),
 					Frequency: v.Frequency,
 					Mode:      v.Mode,
+					Comment:   v.Comments,
 				})
 			}
 		}
@@ -190,22 +231,15 @@ func fetchFreshSpots(callsign string) []DisplaySpot {
 				results = append(results, DisplaySpot{
 					ID:        fmt.Sprintf("SOTA-%d", v.Id),
 					Source:    "SOTA",
-					Time:      parseAndFormatTime(v.TimeStamp),
+					RawTime:   parseRawTime(v.TimeStamp),
 					Location:  fmt.Sprintf("%s (%s)", v.SummitCode, v.SummitName),
 					Frequency: freq,
 					Mode:      v.Mode,
+					Comment:   v.Comments,
 				})
 			}
 		}
 	}
 
-	// Sort by time? The API usually returns sorted data.
-	// But we are combining sources.
-	// For simplicity, we just return what we found.
-	// We can limit to 10 here too.
-	if len(results) > 10 {
-		results = results[:10]
-	}
-
-	return results
+	return dedupAndSortSpots(results, maxCachedSpots)
 }
