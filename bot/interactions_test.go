@@ -58,14 +58,19 @@ func TestDedupAndSortSpots_CollapsesConsecutiveDuplicates(t *testing.T) {
 	}
 }
 
-func TestDedupAndSortSpots_DifferentCommentIsNotDuplicate(t *testing.T) {
+func TestDedupAndSortSpots_DifferentCommentStillCollapses(t *testing.T) {
+	// POTA emits one spot per spotter, each with its own free-text comment,
+	// for what is the same activation. They should collapse to one row.
 	input := []DisplaySpot{
 		mkSpot(10, "14044.0", "QRT soon"),
 		mkSpot(11, "14044.0", "QRV"),
 	}
 	got := dedupAndSortSpots(input, 10)
-	if len(got) != 2 {
-		t.Fatalf("different comments should not collapse, got %d entries", len(got))
+	if len(got) != 1 {
+		t.Fatalf("different comments at same freq should collapse, got %d entries", len(got))
+	}
+	if got[0].RawTime.Minute() != 11 {
+		t.Errorf("expected timestamp bumped to latest (:11), got :%02d", got[0].RawTime.Minute())
 	}
 }
 
@@ -108,6 +113,40 @@ func TestDedupAndSortSpots_RespectsLimit(t *testing.T) {
 	// Newest entry (minute 11) should be first.
 	if got[0].RawTime.Minute() != 11 {
 		t.Errorf("expected newest-first ordering, got minute %d at index 0", got[0].RawTime.Minute())
+	}
+}
+
+func TestDedupAndSortSpots_GapOverOneHourDoesNotCollapse(t *testing.T) {
+	// Same park/freq/mode, but spots are >1h apart → treated as a separate
+	// activation rather than folded into one entry.
+	morning := time.Date(2026, 4, 30, 9, 1, 0, 0, time.UTC)
+	afternoon := time.Date(2026, 4, 30, 11, 5, 0, 0, time.UTC)
+	input := []DisplaySpot{
+		{Source: "POTA", RawTime: morning, Location: "US-0189", Frequency: "14036.0", Mode: "CW"},
+		{Source: "POTA", RawTime: afternoon, Location: "US-0189", Frequency: "14036.0", Mode: "CW"},
+	}
+	got := dedupAndSortSpots(input, 10)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries for >1h gap, got %d", len(got))
+	}
+	if got[0].RawTime != afternoon || got[1].RawTime != morning {
+		t.Errorf("expected newest-first ordering, got %v then %v", got[0].RawTime, got[1].RawTime)
+	}
+}
+
+func TestDedupAndSortSpots_GapWithinOneHourCollapses(t *testing.T) {
+	t0 := time.Date(2026, 4, 30, 9, 1, 0, 0, time.UTC)
+	t1 := t0.Add(59 * time.Minute)
+	input := []DisplaySpot{
+		{Source: "POTA", RawTime: t0, Location: "US-0189", Frequency: "14036.0", Mode: "CW"},
+		{Source: "POTA", RawTime: t1, Location: "US-0189", Frequency: "14036.0", Mode: "CW"},
+	}
+	got := dedupAndSortSpots(input, 10)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 entry for <1h gap, got %d", len(got))
+	}
+	if got[0].RawTime != t1 {
+		t.Errorf("expected timestamp bumped to latest, got %v", got[0].RawTime)
 	}
 }
 

@@ -12,7 +12,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-const maxCachedSpots = 10
+const (
+	maxCachedSpots  = 10
+	dedupGapMaxTime = time.Hour
+)
 
 type DisplaySpot struct {
 	ID        string
@@ -58,12 +61,13 @@ func getCachedSpots(callsign string) []DisplaySpot {
 
 // spotsMatch reports whether two spots describe the same activation, so a
 // later one is just a re-spot rather than a new entry worth recording.
+// Comment is intentionally excluded: POTA emits a separate spot per spotter,
+// each with their own free-text comment, for what is the same activation.
 func spotsMatch(a, b DisplaySpot) bool {
 	return a.Source == b.Source &&
 		a.Location == b.Location &&
 		a.Frequency == b.Frequency &&
-		a.Mode == b.Mode &&
-		a.Comment == b.Comment
+		a.Mode == b.Mode
 }
 
 // dedupAndSortSpots sorts spots chronologically, collapses runs of consecutive
@@ -80,7 +84,8 @@ func dedupAndSortSpots(spots []DisplaySpot, limit int) []DisplaySpot {
 
 	deduped := make([]DisplaySpot, 0, len(spots))
 	for _, s := range spots {
-		if n := len(deduped); n > 0 && spotsMatch(deduped[n-1], s) {
+		if n := len(deduped); n > 0 && spotsMatch(deduped[n-1], s) &&
+			s.RawTime.Sub(deduped[n-1].RawTime) <= dedupGapMaxTime {
 			if s.RawTime.After(deduped[n-1].RawTime) {
 				deduped[n-1].RawTime = s.RawTime
 				deduped[n-1].ID = s.ID
