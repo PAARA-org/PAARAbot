@@ -25,6 +25,7 @@ type DisplaySpot struct {
 	Frequency string
 	Mode      string
 	Comment   string
+	QRT       bool
 }
 
 var (
@@ -63,11 +64,51 @@ func getCachedSpots(callsign string) []DisplaySpot {
 // later one is just a re-spot rather than a new entry worth recording.
 // Comment is intentionally excluded: POTA emits a separate spot per spotter,
 // each with their own free-text comment, for what is the same activation.
+// QRT is part of the key so a NORMAL→QRT (or QRT→NORMAL) flip on the same
+// frequency is preserved as a separate cache entry.
 func spotsMatch(a, b DisplaySpot) bool {
 	return a.Source == b.Source &&
 		a.Location == b.Location &&
 		a.Frequency == b.Frequency &&
-		a.Mode == b.Mode
+		a.Mode == b.Mode &&
+		a.QRT == b.QRT
+}
+
+// IsQRT reports whether a free-text spot comment indicates the activator is
+// going off-air. POTA has no status field and SOTA's TEST/NORMAL types don't
+// cover the QRT-via-comment path, so we look for the Q-code in the text.
+func IsQRT(comment string) bool {
+	return strings.Contains(strings.ToUpper(comment), "QRT")
+}
+
+// SpotStatus captures the bits of a spot we watch for transitions: QRT (from
+// comment for POTA, from comment or Type for SOTA) and the SOTA Type field
+// itself, so a NORMAL↔TEST flip is also caught.
+type SpotStatus struct {
+	QRT  bool
+	Type string
+}
+
+// StatusTracker remembers the last-seen status per activation key and reports
+// when it changes, so callers can fire an out-of-band Discord message that
+// bypasses the normal rate limiter.
+type StatusTracker struct {
+	mu    sync.Mutex
+	state map[string]SpotStatus
+}
+
+func NewStatusTracker() *StatusTracker {
+	return &StatusTracker{state: make(map[string]SpotStatus)}
+}
+
+// Transition records the latest status for key and returns true if it differs
+// from the previously stored one. The first observation is never a transition.
+func (t *StatusTracker) Transition(key string, status SpotStatus) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	prev, exists := t.state[key]
+	t.state[key] = status
+	return exists && prev != status
 }
 
 // dedupAndSortSpots sorts spots chronologically, collapses runs of consecutive
@@ -158,18 +199,26 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if len(spots) == 0 {
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("No recent spots found for %s.", callsign))
+		if _, err := s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("No recent spots found for %s.", callsign)); err != nil {
+			fmt.Println("Error sending message:", err)
+		}
 		return
 	}
 
 	// Format output
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Most recent %d spots for **%s**:\n", maxCachedSpots, callsign))
+	fmt.Fprintf(&sb, "Most recent %d spots for **%s**:\n", maxCachedSpots, callsign)
 	for _, spot := range spots {
-		sb.WriteString(fmt.Sprintf("- **%s** [%s] %s %s %s\n", spot.Source, formatSpotTime(spot.RawTime), spot.Location, spot.Frequency, spot.Mode))
+		suffix := ""
+		if spot.QRT {
+			suffix = " QRT"
+		}
+		fmt.Fprintf(&sb, "- **%s** [%s] %s %s %s%s\n", spot.Source, formatSpotTime(spot.RawTime), spot.Location, spot.Frequency, spot.Mode, suffix)
 	}
 
-	s.ChannelMessageSend(m.ChannelID, sb.String())
+	if _, err := s.ChannelMessageSend(m.ChannelID, sb.String()); err != nil {
+		fmt.Println("Error sending message:", err)
+	}
 }
 
 // parseRawTime parses a POTA/SOTA timestamp into a time.Time. Naive

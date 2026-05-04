@@ -150,6 +150,73 @@ func TestDedupAndSortSpots_GapWithinOneHourCollapses(t *testing.T) {
 	}
 }
 
+func TestIsQRT(t *testing.T) {
+	cases := map[string]bool{
+		"":                       false,
+		"QRV CW":                 false,
+		"QRT":                    true,
+		"qrt 73":                 true,
+		"QRT in 5":               true,
+		"55N SC":                 false,
+		"RBN 8 dB 26 WPM":        false,
+		"going QRT, thanks all!": true,
+	}
+	for in, want := range cases {
+		if got := IsQRT(in); got != want {
+			t.Errorf("IsQRT(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestDedupAndSortSpots_QRTTransitionIsNotCollapsed(t *testing.T) {
+	// NORMAL → QRT → NORMAL on the same frequency must remain three entries
+	// so the transition is visible in the recent-spots view.
+	t0 := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	input := []DisplaySpot{
+		{Source: "POTA", RawTime: t0, Location: "US-0189", Frequency: "14036.0", Mode: "CW"},
+		{Source: "POTA", RawTime: t0.Add(5 * time.Minute), Location: "US-0189", Frequency: "14036.0", Mode: "CW", QRT: true},
+		{Source: "POTA", RawTime: t0.Add(10 * time.Minute), Location: "US-0189", Frequency: "14036.0", Mode: "CW"},
+	}
+	got := dedupAndSortSpots(input, 10)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 entries across NORMAL/QRT/NORMAL flips, got %d", len(got))
+	}
+	if got[0].QRT || !got[1].QRT || got[2].QRT {
+		t.Errorf("expected newest-first NORMAL/QRT/NORMAL, got QRT flags %v/%v/%v",
+			got[0].QRT, got[1].QRT, got[2].QRT)
+	}
+}
+
+func TestStatusTracker_Transition(t *testing.T) {
+	tr := NewStatusTracker()
+
+	// First observation is never a transition.
+	if tr.Transition("k", SpotStatus{QRT: false}) {
+		t.Error("first observation should not be a transition")
+	}
+	// Same status repeated: no transition.
+	if tr.Transition("k", SpotStatus{QRT: false}) {
+		t.Error("unchanged status should not be a transition")
+	}
+	// NORMAL → QRT.
+	if !tr.Transition("k", SpotStatus{QRT: true}) {
+		t.Error("NORMAL→QRT should be a transition")
+	}
+	// QRT → NORMAL.
+	if !tr.Transition("k", SpotStatus{QRT: false}) {
+		t.Error("QRT→NORMAL should be a transition")
+	}
+	// SOTA Type change with QRT unchanged still counts as a transition.
+	tr.Transition("sota", SpotStatus{QRT: false, Type: "NORMAL"})
+	if !tr.Transition("sota", SpotStatus{QRT: false, Type: "TEST"}) {
+		t.Error("Type change should be a transition even when QRT is unchanged")
+	}
+	// Different keys are independent.
+	if tr.Transition("other", SpotStatus{QRT: true}) {
+		t.Error("first observation under a new key should not be a transition")
+	}
+}
+
 func TestDedupAndSortSpots_EmptyInput(t *testing.T) {
 	if got := dedupAndSortSpots(nil, 10); len(got) != 0 {
 		t.Errorf("expected empty result for nil input, got %d entries", len(got))

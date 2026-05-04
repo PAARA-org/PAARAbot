@@ -43,6 +43,7 @@ func Run() {
 	}
 
 	limiter := NewRateLimiter()
+	tracker := NewStatusTracker()
 
 	discord.AddHandler(messageHandler)
 
@@ -82,6 +83,7 @@ func Run() {
 		// Go through the POTA spots and see if any of them is for a member callsign
 		for _, v := range potaSpots {
 			if slices.Contains(currentCallSigns, v.Activator) {
+				qrt := IsQRT(v.Comments)
 				updateCache(v.Activator, DisplaySpot{
 					ID:        fmt.Sprintf("POTA-%d", v.SpotID),
 					Source:    "POTA",
@@ -90,11 +92,17 @@ func Run() {
 					Frequency: v.Frequency,
 					Mode:      v.Mode,
 					Comment:   v.Comments,
+					QRT:       qrt,
 				})
 
 				activation := fmt.Sprintf("%s at %s (%s %s)", v.Activator, v.Reference, v.Name, v.LocationDesc)
-				message := fmt.Sprintf("%s at %s (%s %s) on %sKHz %s [%s] \n", v.Activator, v.Reference, v.Name, v.LocationDesc, v.Frequency, v.Mode, v.Comments)
-				if limiter.Allow(activation) {
+				transition := tracker.Transition("POTA|"+activation, SpotStatus{QRT: qrt})
+				message := fmt.Sprintf("%s at %s (%s %s) on %sKHz %s [%s]", v.Activator, v.Reference, v.Name, v.LocationDesc, v.Frequency, v.Mode, v.Comments)
+				if qrt {
+					message += " QRT"
+				}
+				message += " \n"
+				if transition || limiter.Allow(activation) {
 					_, err = discord.ChannelMessageSend(PotaChannelID, message)
 					if err != nil {
 						fmt.Println("Error sending message:", err)
@@ -107,6 +115,7 @@ func Run() {
 		// Do the same for the SOTA spots
 		for _, v := range sotaSpots {
 			if slices.Contains(currentCallSigns, v.ActivatorCallsign) {
+				qrt := v.Type == "QRT" || IsQRT(v.Comments)
 				updateCache(v.ActivatorCallsign, DisplaySpot{
 					ID:        fmt.Sprintf("SOTA-%d", v.Id),
 					Source:    "SOTA",
@@ -115,11 +124,17 @@ func Run() {
 					Frequency: fmt.Sprintf("%.3fMHz", v.Frequency),
 					Mode:      v.Mode,
 					Comment:   v.Comments,
+					QRT:       qrt,
 				})
 
 				activation := fmt.Sprintf("%s at %s (%s - %dft)", v.ActivatorCallsign, v.SummitCode, v.SummitName, v.AltFt)
-				message := fmt.Sprintf("%s at %s (%s - %dft/%dm) on %.3fMHz %s [%s] \n", v.ActivatorCallsign, v.SummitCode, v.SummitName, v.AltFt, v.AltM, v.Frequency, v.Mode, v.Comments)
-				if limiter.Allow(activation) {
+				transition := tracker.Transition("SOTA|"+activation, SpotStatus{QRT: qrt, Type: v.Type})
+				message := fmt.Sprintf("%s at %s (%s - %dft/%dm) on %.3fMHz %s [%s]", v.ActivatorCallsign, v.SummitCode, v.SummitName, v.AltFt, v.AltM, v.Frequency, v.Mode, v.Comments)
+				if qrt {
+					message += " QRT"
+				}
+				message += " \n"
+				if transition || limiter.Allow(activation) {
 					_, err = discord.ChannelMessageSend(SotaChannelID, message)
 					if err != nil {
 						fmt.Println("Error sending message:", err)
@@ -127,7 +142,11 @@ func Run() {
 					// If this SOTA peak is in a POTA park, let's log a message too!
 					r := sota.IsPota(v.SummitCode)
 					if r.IsPota {
-						message = fmt.Sprintf("%s at %s (%s) on %.3fMHz %s [from SOTA spot] \n", v.ActivatorCallsign, r.ParkId, r.ParkName, v.Frequency, v.Mode)
+						message = fmt.Sprintf("%s at %s (%s) on %.3fMHz %s [from SOTA spot]", v.ActivatorCallsign, r.ParkId, r.ParkName, v.Frequency, v.Mode)
+						if qrt {
+							message += " QRT"
+						}
+						message += " \n"
 						_, err = discord.ChannelMessageSend(PotaChannelID, message)
 						if err != nil {
 							fmt.Println("Error sending message:", err)
