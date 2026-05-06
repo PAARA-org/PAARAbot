@@ -33,6 +33,7 @@ go.work.sum
 
 # The built binary itself
 PAARAbot
+PAARAbot-linux-armv6
 
 # SQLite spot cache (and WAL/SHM sidecars)
 *.db
