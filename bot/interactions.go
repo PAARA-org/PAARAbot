@@ -62,11 +62,12 @@ func updateCache(callsign string, spot DisplaySpot) {
 
 // hydrateCacheFromStore replaces the in-memory cache with the contents of
 // the supplied store. Called once at startup so a restart picks up where
-// the previous run left off.
-func hydrateCacheFromStore(store *SpotStore) error {
+// the previous run left off. Returns the number of distinct callsigns and
+// the total spot count loaded so the caller can log them.
+func hydrateCacheFromStore(store *SpotStore) (callsigns, spots int, err error) {
 	loaded, err := store.LoadAll()
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
@@ -75,7 +76,10 @@ func hydrateCacheFromStore(store *SpotStore) error {
 		spotCache = make(map[string][]DisplaySpot)
 	}
 	spotPersistence = store
-	return nil
+	for _, s := range spotCache {
+		spots += len(s)
+	}
+	return len(spotCache), spots, nil
 }
 
 // getCachedSpots returns a copy of cached spots for a callsign.

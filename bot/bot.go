@@ -49,11 +49,12 @@ func Run() {
 			return
 		}
 		defer store.Close()
-		if err := hydrateCacheFromStore(store); err != nil {
+		callsigns, spots, err := hydrateCacheFromStore(store)
+		if err != nil {
 			logger.Println("Error loading cached spots:", err)
 			return
 		}
-		logger.Println("Spot cache hydrated from", DBPath)
+		logger.Printf("Spot cache hydrated from %s: %d callsign(s), %d spot(s)", DBPath, callsigns, spots)
 	}
 
 	// create a session

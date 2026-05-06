@@ -328,8 +328,12 @@ func TestHydrateCacheFromStore_PopulatesMemory(t *testing.T) {
 		cacheMu.Unlock()
 	})
 
-	if err := hydrateCacheFromStore(store); err != nil {
+	callsigns, spots, err := hydrateCacheFromStore(store)
+	if err != nil {
 		t.Fatalf("hydrateCacheFromStore: %v", err)
+	}
+	if callsigns != 1 || spots != 1 {
+		t.Errorf("hydrate counters: got callsigns=%d spots=%d, want 1/1", callsigns, spots)
 	}
 
 	got := getCachedSpots("W6JY")
