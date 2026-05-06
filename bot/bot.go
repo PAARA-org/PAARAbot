@@ -25,6 +25,10 @@ var SotaChannelID string
 var RunInterval time.Duration
 var ThrottleTime time.Duration
 
+// DBPath is the SQLite file used to persist the spot cache. Empty disables
+// persistence and the bot runs with an in-memory cache only.
+var DBPath string
+
 type RateLimiter struct {
 	mu    sync.Mutex
 	users map[string]time.Time
@@ -34,6 +38,23 @@ func Run() {
 
 	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lshortfile)
 	logger.SetFlags(logger.Flags() | log.Llongfile)
+
+	// Open the persistent spot store and hydrate the in-memory cache from
+	// it before the first poll, so a restart inherits the previous run's
+	// recent-spots view. If DBPath is unset we run memory-only.
+	if DBPath != "" {
+		store, err := OpenSpotStore(DBPath)
+		if err != nil {
+			logger.Println("Error opening spot store:", err)
+			return
+		}
+		defer store.Close()
+		if err := hydrateCacheFromStore(store); err != nil {
+			logger.Println("Error loading cached spots:", err)
+			return
+		}
+		logger.Println("Spot cache hydrated from", DBPath)
+	}
 
 	// create a session
 	discord, err := discordgo.New("Bot " + BotToken)

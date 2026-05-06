@@ -24,6 +24,7 @@ func main() {
 	sotaChannelID := flag.String("sotaChannelID", "", "SOTA channel ID from Discord.")
 	spotCheckInterval := flag.Duration("spotCheckInterval", 2*time.Minute, "How often to check for new spots")
 	postThrottleTime := flag.Duration("postThrottleTime", 4*time.Hour, "How often to re-post the same spot.")
+	dbPath := flag.String("dbPath", "paarabot.db", "Path to the SQLite file used to persist the spot cache. Set to empty to disable persistence.")
 	versionFlag := flag.Bool("version", false, "Display application build information and exit.")
 
 	// Parse the flags
@@ -110,6 +111,7 @@ func main() {
 	bot.SotaChannelID = *sotaChannelID
 	bot.RunInterval = *spotCheckInterval
 	bot.ThrottleTime = *postThrottleTime
+	bot.DBPath = *dbPath
 
 	// Let's run the bot!
 	bot.Run()

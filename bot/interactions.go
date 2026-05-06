@@ -31,19 +31,51 @@ type DisplaySpot struct {
 var (
 	spotCache = make(map[string][]DisplaySpot)
 	cacheMu   sync.RWMutex
+	// spotPersistence is the optional disk store. When non-nil, every
+	// updateCache call mirrors the resulting per-callsign slice to SQLite so
+	// the cache survives restarts. Left nil in tests and when no DB path is
+	// configured, in which case the bot falls back to memory-only behavior.
+	spotPersistence *SpotStore
 )
 
 // updateCache adds a spot to the cache for a callsign. Chronologically
 // consecutive duplicates (same source, location, frequency, mode and comment)
 // are collapsed into a single entry whose timestamp is bumped to the latest
-// observation.
+// observation. The resulting slice is also written through to the persistent
+// store if one is configured.
 func updateCache(callsign string, spot DisplaySpot) {
 	cacheMu.Lock()
-	defer cacheMu.Unlock()
-
 	callsign = strings.ToUpper(callsign)
 	spots := append(spotCache[callsign], spot)
-	spotCache[callsign] = dedupAndSortSpots(spots, maxCachedSpots)
+	spots = dedupAndSortSpots(spots, maxCachedSpots)
+	spotCache[callsign] = spots
+	store := spotPersistence
+	snapshot := append([]DisplaySpot(nil), spots...)
+	cacheMu.Unlock()
+
+	if store != nil {
+		if err := store.ReplaceCallsign(callsign, snapshot); err != nil {
+			fmt.Printf("Error persisting spots for %s: %v\n", callsign, err)
+		}
+	}
+}
+
+// hydrateCacheFromStore replaces the in-memory cache with the contents of
+// the supplied store. Called once at startup so a restart picks up where
+// the previous run left off.
+func hydrateCacheFromStore(store *SpotStore) error {
+	loaded, err := store.LoadAll()
+	if err != nil {
+		return err
+	}
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	spotCache = loaded
+	if spotCache == nil {
+		spotCache = make(map[string][]DisplaySpot)
+	}
+	spotPersistence = store
+	return nil
 }
 
 // getCachedSpots returns a copy of cached spots for a callsign.

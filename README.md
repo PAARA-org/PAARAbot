@@ -25,6 +25,7 @@ $ ./PAARAbot \
   -sotacsv=sota_pota.csv \
   -postThrottleTime=4.5h \
   -spotCheckInterval=3m \
+  -dbPath=/var/lib/paarabot/spots.db \
   -token=abc \
   -potaChannelID=xxx \
   -sotaChannelID=yyy
@@ -79,6 +80,16 @@ This flag controls how often the same combination of CallSign and POTA/SOTA enti
 
 It's highly recommended to not reduce this flag to less than 1 hour, as that could cause doubling the posts.
 
+## `-dbPath`
+
+Path to the SQLite file used to persist the per-callsign spot cache. Defaults to `paarabot.db` in the current working directory. Pass an empty string (`-dbPath=""`) to run with an in-memory cache only.
+
+The file is created automatically on first start, so no manual setup is needed. The schema is reconciled on every start: if a future bot release adds or removes a column from the spots table, the existing file is migrated in place via `ALTER TABLE` rather than being recreated, so cached history is preserved across upgrades.
+
+The store is tuned for SD-card-backed deployments (the bot runs on an old Raspberry Pi for the PAARA club): WAL journaling, `synchronous=NORMAL`, an in-memory temp store, and a single writer connection — the goal is to minimize write amplification and fsync calls so the SD card lasts longer.
+
+The bot also writes two sidecar files next to the DB (`*.db-wal` and `*.db-shm`) — these are normal SQLite WAL files and should not be deleted while the bot is running.
+
 ## `-help`
 
 ```bash
@@ -87,6 +98,8 @@ flag provided but not defined: -helpshort
 Usage of ./PAARAbot:
   -csvURL string
     	URL to a CSV file containing ham callsigns (e.g. Google Sheet export link).
+  -dbPath string
+		Path to the SQLite file used to persist the spot cache. Set to empty to disable persistence. (default "paarabot.db")
   -hamfile string
     	File containing the list of ham callsigns to check for activations.
   -postThrottleTime duration
