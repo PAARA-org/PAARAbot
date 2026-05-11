@@ -120,6 +120,9 @@ func IsQRT(comment string) bool {
 // SpotStatus captures the bits of a spot we watch for transitions: QRT (from
 // comment for POTA, from comment or Type for SOTA) and the SOTA Type field
 // itself, so a NORMAL↔TEST flip is also caught.
+//
+// QRT is latched inside StatusTracker once observed; see Transition for the
+// rationale.
 type SpotStatus struct {
 	QRT  bool
 	Type string
@@ -139,12 +142,26 @@ func NewStatusTracker() *StatusTracker {
 
 // Transition records the latest status for key and returns true if it differs
 // from the previously stored one. The first observation is never a transition.
+//
+// QRT is latched: once the stored status has QRT=true, incoming statuses with
+// QRT=false are recorded as QRT=true inside the tracker. Without this, a real
+// activation that has both a human "Qrt" spot and automated RBN re-spots in
+// flight (whose comments don't contain "QRT") was perceived as a constant
+// QRT↔NORMAL flip and every poll bypassed the rate limiter. The caller's rate
+// limiter still applies to non-transition spots, so after ThrottleTime the
+// next spot is allowed through the regular path; if its current comment no
+// longer says QRT, the posted message simply omits the QRT suffix.
 func (t *StatusTracker) Transition(key string, status SpotStatus) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	prev, exists := t.state[key]
-	t.state[key] = status
-	return exists && prev != status
+
+	next := status
+	if exists && prev.QRT {
+		next.QRT = true
+	}
+	t.state[key] = next
+	return exists && prev != next
 }
 
 // dedupAndSortSpots sorts spots chronologically, collapses runs of consecutive

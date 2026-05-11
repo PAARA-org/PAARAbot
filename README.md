@@ -121,6 +121,27 @@ Usage of ./PAARAbot:
 ```
 
 
+# QRT Handling
+
+When a tracked activator's spot is marked QRT (either via the SOTA `QRT`
+type or by the substring `QRT` appearing in the comments of a POTA or SOTA
+spot), the bot posts a Discord message immediately, bypassing the
+`-postThrottleTime` rate limit so the going-off-air notice isn't held up.
+
+Once an activation has been observed in QRT, the bot **latches** that status:
+later spots whose comments no longer say QRT will not trigger another
+out-of-band post. Without this latch, a real activation that has both a
+manual "Qrt" spot and automated Reverse Beacon Network (RBN) re-spots in
+flight was perceived as a constant QRT↔NORMAL flip — every poll looked like
+a status transition and bypassed the throttle, flooding the channel.
+
+The normal rate limit still applies. After `-postThrottleTime` elapses, the
+next spot for that activation is allowed through the regular path with
+whatever QRT status its current comment dictates, so the posted message
+simply drops the `QRT` suffix once the activator stops sending it — the
+message stream naturally moves out of QRT without the bot having to fire a
+dedicated "no longer QRT" announcement.
+
 # SOTA activations in POTA parks
 
 This is a feature requested by **Gabriel** [AJ6X](https://www.qrz.com/db/AJ6X) on 06/17/2025. When a SOTA activation is detected by the bot, it will check whether the peak is located in a POTA location and, if true, will post an additional message in the `#pota` Discord channel.

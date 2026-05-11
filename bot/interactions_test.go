@@ -202,14 +202,26 @@ func TestStatusTracker_Transition(t *testing.T) {
 	if !tr.Transition("k", SpotStatus{QRT: true}) {
 		t.Error("NORMAL→QRT should be a transition")
 	}
-	// QRT → NORMAL.
-	if !tr.Transition("k", SpotStatus{QRT: false}) {
-		t.Error("QRT→NORMAL should be a transition")
+	// QRT → NORMAL is latched: the tracker keeps the activation in QRT and
+	// does not report a transition, so the alternating Qrt/RBN stream stops
+	// bypassing the rate limiter.
+	if tr.Transition("k", SpotStatus{QRT: false}) {
+		t.Error("QRT→NORMAL must be latched, not reported as a transition")
+	}
+	// A later QRT spot is also not a transition because the tracker is
+	// already in QRT — re-announcing it adds no value.
+	if tr.Transition("k", SpotStatus{QRT: true}) {
+		t.Error("QRT after latch should not be a fresh transition")
 	}
 	// SOTA Type change with QRT unchanged still counts as a transition.
 	tr.Transition("sota", SpotStatus{QRT: false, Type: "NORMAL"})
 	if !tr.Transition("sota", SpotStatus{QRT: false, Type: "TEST"}) {
 		t.Error("Type change should be a transition even when QRT is unchanged")
+	}
+	// Type changes still fire even when QRT is latched.
+	tr.Transition("sotaQRT", SpotStatus{QRT: true, Type: "NORMAL"})
+	if !tr.Transition("sotaQRT", SpotStatus{QRT: false, Type: "TEST"}) {
+		t.Error("Type change should fire even when QRT is latched")
 	}
 	// Different keys are independent.
 	if tr.Transition("other", SpotStatus{QRT: true}) {
