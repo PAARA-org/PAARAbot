@@ -16,9 +16,12 @@ func mkSpot(min int, freq, comment string) DisplaySpot {
 	}
 }
 
-func TestDedupAndSortSpots_CollapsesConsecutiveDuplicates(t *testing.T) {
-	// Mirrors the W6JY example: 14044.0 → 14044.1 → 14044.0 should collapse
-	// to 3 entries. Input is in arrival order (chronological).
+func TestDedupAndSortSpots_CollapsesDuplicatesByKey(t *testing.T) {
+	// Dedup is global by (source, location, frequency, mode, QRT) within the
+	// gap window, not just consecutive. The W6JY-style move 14044.0 → 14044.1
+	// → 14044.0 therefore collapses to 2 entries (one per distinct frequency)
+	// — the latest 14044.0 timestamp wins, and the brief 14044.1 stop is
+	// preserved as its own row.
 	input := []DisplaySpot{
 		mkSpot(57, "14044.0", ""),
 		mkSpot(57, "14044.0", ""),
@@ -34,26 +37,63 @@ func TestDedupAndSortSpots_CollapsesConsecutiveDuplicates(t *testing.T) {
 
 	got := dedupAndSortSpots(input, 10)
 
-	if len(got) != 3 {
-		t.Fatalf("expected 3 entries, got %d: %+v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %+v", len(got), got)
 	}
 
-	// Newest-first ordering, with timestamps bumped to the latest within each run.
-	// time.Date normalizes minute 62 → 09:02, so .Minute() returns 2.
+	// Newest-first. time.Date normalizes minute 62 → 09:02, so .Minute() returns 2.
 	want := []struct {
 		freq string
 		hour int
 		min  int
 	}{
-		{"14044.0", 9, 2},  // second 14044.0 run, ends at 09:02
+		{"14044.0", 9, 2},  // all 14044.0 observations collapsed, latest at 09:02
 		{"14044.1", 8, 59}, // single 14044.1 spot
-		{"14044.0", 8, 59}, // first 14044.0 run, ends at 08:59
 	}
 	for i, w := range want {
 		gh, gm := got[i].RawTime.Hour(), got[i].RawTime.Minute()
 		if got[i].Frequency != w.freq || gh != w.hour || gm != w.min {
 			t.Errorf("entry %d: got %s @ %02d:%02d, want %s @ %02d:%02d",
 				i, got[i].Frequency, gh, gm, w.freq, w.hour, w.min)
+		}
+	}
+}
+
+func TestDedupAndSortSpots_GlobalDedupAcrossPollingCycles(t *testing.T) {
+	// Simulates two polling cycles for one activation: the same set of POTA
+	// frequency-precision variants plus a SOTA row arrives in each cycle.
+	// With global dedup the cache converges — each variant collapses with
+	// its earlier copy via the key match, so we get one row per distinct
+	// (source, frequency) rather than doubling every cycle.
+	t0 := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
+	t1 := t0.Add(2 * time.Minute)
+
+	mk := func(when time.Time, source, location, freq string) DisplaySpot {
+		return DisplaySpot{
+			Source:    source,
+			RawTime:   when,
+			Location:  location,
+			Frequency: freq,
+			Mode:      "CW",
+		}
+	}
+	input := []DisplaySpot{
+		mk(t0, "POTA", "US-3527", "14064"),
+		mk(t0, "POTA", "US-3527", "14064.0"),
+		mk(t0, "POTA", "US-3527", "14064.5"),
+		mk(t0, "SOTA", "W6/NC-353", "14.064MHz"),
+		mk(t1, "POTA", "US-3527", "14064"),
+		mk(t1, "POTA", "US-3527", "14064.0"),
+		mk(t1, "POTA", "US-3527", "14064.5"),
+		mk(t1, "SOTA", "W6/NC-353", "14.064MHz"),
+	}
+	got := dedupAndSortSpots(input, 10)
+	if len(got) != 4 {
+		t.Fatalf("expected 4 distinct entries after global dedup, got %d: %+v", len(got), got)
+	}
+	for _, g := range got {
+		if !g.RawTime.Equal(t1) {
+			t.Errorf("expected each entry's timestamp bumped to %v, got %v for %+v", t1, g.RawTime, g)
 		}
 	}
 }
@@ -168,9 +208,13 @@ func TestIsQRT(t *testing.T) {
 	}
 }
 
-func TestDedupAndSortSpots_QRTTransitionIsNotCollapsed(t *testing.T) {
-	// NORMAL → QRT → NORMAL on the same frequency must remain three entries
-	// so the transition is visible in the recent-spots view.
+func TestDedupAndSortSpots_QRTKeptDistinctFromNormal(t *testing.T) {
+	// QRT is part of the dedup key, so a QRT spot is never folded into a
+	// NORMAL one. Under global dedup, NORMAL → QRT → NORMAL on the same
+	// frequency collapses to two entries: the QRT moment (preserved as its
+	// own row) and the latest NORMAL spot, whose timestamp absorbs the
+	// earlier NORMAL run. That still makes the transition visible — newest
+	// first shows NORMAL now, with a QRT entry just behind it.
 	t0 := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
 	input := []DisplaySpot{
 		{Source: "POTA", RawTime: t0, Location: "US-0189", Frequency: "14036.0", Mode: "CW"},
@@ -178,12 +222,18 @@ func TestDedupAndSortSpots_QRTTransitionIsNotCollapsed(t *testing.T) {
 		{Source: "POTA", RawTime: t0.Add(10 * time.Minute), Location: "US-0189", Frequency: "14036.0", Mode: "CW"},
 	}
 	got := dedupAndSortSpots(input, 10)
-	if len(got) != 3 {
-		t.Fatalf("expected 3 entries across NORMAL/QRT/NORMAL flips, got %d", len(got))
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries (latest NORMAL + QRT moment), got %d: %+v", len(got), got)
 	}
-	if got[0].QRT || !got[1].QRT || got[2].QRT {
-		t.Errorf("expected newest-first NORMAL/QRT/NORMAL, got QRT flags %v/%v/%v",
-			got[0].QRT, got[1].QRT, got[2].QRT)
+	if got[0].QRT || !got[1].QRT {
+		t.Errorf("expected newest-first NORMAL then QRT, got QRT flags %v/%v",
+			got[0].QRT, got[1].QRT)
+	}
+	if !got[0].RawTime.Equal(t0.Add(10 * time.Minute)) {
+		t.Errorf("expected NORMAL entry bumped to t0+10m, got %v", got[0].RawTime)
+	}
+	if !got[1].RawTime.Equal(t0.Add(5 * time.Minute)) {
+		t.Errorf("expected QRT entry at t0+5m, got %v", got[1].RawTime)
 	}
 }
 

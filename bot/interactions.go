@@ -38,11 +38,13 @@ var (
 	spotPersistence *SpotStore
 )
 
-// updateCache adds a spot to the cache for a callsign. Chronologically
-// consecutive duplicates (same source, location, frequency, mode and comment)
-// are collapsed into a single entry whose timestamp is bumped to the latest
-// observation. The resulting slice is also written through to the persistent
-// store if one is configured.
+// updateCache adds a spot to the cache for a callsign. Duplicates that share
+// a key (source, location, frequency, mode, QRT) are collapsed into a single
+// entry whose timestamp is bumped to the latest observation — even when the
+// duplicates are not adjacent in time, so a steady activation that's polled
+// every few minutes by multiple spotters doesn't churn the cache. The
+// resulting slice is also written through to the persistent store if one is
+// configured.
 func updateCache(callsign string, spot DisplaySpot) {
 	cacheMu.Lock()
 	callsign = strings.ToUpper(callsign)
@@ -164,35 +166,55 @@ func (t *StatusTracker) Transition(key string, status SpotStatus) bool {
 	return exists && prev != next
 }
 
-// dedupAndSortSpots sorts spots chronologically, collapses runs of consecutive
-// duplicates onto the latest timestamp, and returns the most recent entries
-// first, capped at limit.
+// dedupAndSortSpots collapses spots that share a key (source, location,
+// frequency, mode, QRT) into a single entry whose timestamp is bumped to the
+// latest observation, regardless of whether the duplicates are adjacent in
+// time. A gap longer than dedupGapMaxTime between an existing entry and a
+// new same-key spot is treated as a separate run, so an activator who comes
+// back to the same configuration hours later still appears as a fresh row.
+// Results are returned newest-first, capped at limit.
 func dedupAndSortSpots(spots []DisplaySpot, limit int) []DisplaySpot {
 	if len(spots) == 0 {
 		return spots
 	}
 
+	// Walk chronologically so the "most recent matching entry" is the last
+	// one of a given key we've added to deduped so far.
 	sort.SliceStable(spots, func(i, j int) bool {
 		return spots[i].RawTime.Before(spots[j].RawTime)
 	})
 
 	deduped := make([]DisplaySpot, 0, len(spots))
 	for _, s := range spots {
-		if n := len(deduped); n > 0 && spotsMatch(deduped[n-1], s) &&
-			s.RawTime.Sub(deduped[n-1].RawTime) <= dedupGapMaxTime {
-			if s.RawTime.After(deduped[n-1].RawTime) {
-				deduped[n-1].RawTime = s.RawTime
-				deduped[n-1].ID = s.ID
+		merged := false
+		// Search newest-position-first to land on the most recent matching
+		// entry first. If the gap is within window we fold s in; if it's
+		// wider, we leave the old entry alone and append s as a new run.
+		// Either way we stop at the first key match — older same-key
+		// entries are by definition further from s in time.
+		for i := len(deduped) - 1; i >= 0; i-- {
+			if !spotsMatch(deduped[i], s) {
+				continue
 			}
-			continue
+			if s.RawTime.Sub(deduped[i].RawTime) <= dedupGapMaxTime {
+				if s.RawTime.After(deduped[i].RawTime) {
+					deduped[i].RawTime = s.RawTime
+					deduped[i].ID = s.ID
+				}
+				merged = true
+			}
+			break
 		}
-		deduped = append(deduped, s)
+		if !merged {
+			deduped = append(deduped, s)
+		}
 	}
 
-	// Reverse to newest-first.
-	for i, j := 0, len(deduped)-1; i < j; i, j = i+1, j-1 {
-		deduped[i], deduped[j] = deduped[j], deduped[i]
-	}
+	// Bumps during merging may have left deduped out of order; sort by
+	// most-recent timestamp before capping.
+	sort.SliceStable(deduped, func(i, j int) bool {
+		return deduped[i].RawTime.After(deduped[j].RawTime)
+	})
 
 	if len(deduped) > limit {
 		deduped = deduped[:limit]

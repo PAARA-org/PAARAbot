@@ -150,6 +150,13 @@ The mapping from PEAK to PARK is done by parsing this CSV: https://raw.githubuse
 
 You will need to fetch a copy of this CSV file locally and point the bot at it using the `-sotacsv` flag.
 
+When a SOTA peak is mapped to a POTA park, the SOTA cache entry's location
+is annotated with the mapped park id — e.g. `W6/NC-353 (Burdell Mountain -
+1580ft, within US-3527)`. This keeps the SOTA spot (which the activator may
+have self-spotted only on SOTA) visible in the per-callsign recent-spots
+view while making the SOTA↔POTA relationship explicit, without trying to
+collapse the two sources into one entry.
+
 # User Interactions
 
 Users can interact with the bot directly in the Discord channels configured for POTA or SOTA spots.
@@ -164,7 +171,7 @@ If you want to check the recent activity of a specific callsign (even if it's no
 `@PAARAbot K6STR`
 
 **Behavior:**
-1. The bot checks its local cache for the last 10 distinct spotting events for that callsign. Consecutive re-spots of the same activation (same source, location, frequency, mode and comment) are collapsed into a single entry whose timestamp is bumped to the latest observation, so a long stable activation shows up once rather than crowding out the history. A genuine change followed by a return — e.g. `14044.0` → `14044.1` → `14044.0` — is preserved as three entries.
+1. The bot checks its local cache for the last 10 distinct spotting events for that callsign. Re-spots of the same activation (same source, location, frequency, mode, and QRT status) are collapsed into a single entry whose timestamp is bumped to the latest observation, regardless of whether the duplicates are adjacent in time — so a steady activation that's polled every few minutes by multiple POTA spotters and SOTA spotters doesn't double the cache each cycle. A meaningful change in any of the key fields (moving to a new frequency, going QRT) creates a separate entry. Same-key spots more than an hour apart are also kept as separate runs, so an activator who comes back to the same configuration later in the day still appears as a fresh row.
 2. If the cache is empty (e.g. the bot restarted or the user hasn't been active recently), it will automatically fetch the latest spot lists from POTA and SOTA to find any recent activity. The same dedup is applied to the fresh results.
 3. It will reply with the 10 most recent entries in chronological order (newest first), including the source (POTA/SOTA), time, location, frequency, and mode.
 

@@ -138,11 +138,23 @@ func Run() {
 		for _, v := range sotaSpots {
 			if slices.Contains(currentCallSigns, v.ActivatorCallsign) {
 				qrt := v.Type == "QRT" || IsQRT(v.Comments)
+
+				// Always cache the SOTA spot: it represents the activator's own
+				// SOTA self-spot (or a SOTA-side observer) and may not have an
+				// equivalent POTA-side entry. If the peak happens to be mapped
+				// to a POTA park, annotate the location with the park id so the
+				// recent-spots view makes the SOTA↔POTA relationship visible
+				// without having to cross-reference rows.
+				potaMapping := sota.IsPota(v.SummitCode)
+				location := fmt.Sprintf("%s (%s - %dft)", v.SummitCode, v.SummitName, v.AltFt)
+				if potaMapping.IsPota {
+					location = fmt.Sprintf("%s (%s - %dft, within %s)", v.SummitCode, v.SummitName, v.AltFt, potaMapping.ParkId)
+				}
 				updateCache(v.ActivatorCallsign, DisplaySpot{
 					ID:        fmt.Sprintf("SOTA-%d", v.Id),
 					Source:    "SOTA",
 					RawTime:   parseRawTime(v.TimeStamp),
-					Location:  fmt.Sprintf("%s (%s - %dft)", v.SummitCode, v.SummitName, v.AltFt),
+					Location:  location,
 					Frequency: fmt.Sprintf("%.3fMHz", v.Frequency),
 					Mode:      v.Mode,
 					Comment:   v.Comments,
@@ -162,9 +174,8 @@ func Run() {
 						fmt.Println("Error sending message:", err)
 					}
 					// If this SOTA peak is in a POTA park, let's log a message too!
-					r := sota.IsPota(v.SummitCode)
-					if r.IsPota {
-						message = fmt.Sprintf("%s at %s (%s) on %.3fMHz %s [from SOTA spot]", v.ActivatorCallsign, r.ParkId, r.ParkName, v.Frequency, v.Mode)
+					if potaMapping.IsPota {
+						message = fmt.Sprintf("%s at %s (%s) on %.3fMHz %s [from SOTA spot]", v.ActivatorCallsign, potaMapping.ParkId, potaMapping.ParkName, v.Frequency, v.Mode)
 						if qrt {
 							message += " QRT"
 						}
