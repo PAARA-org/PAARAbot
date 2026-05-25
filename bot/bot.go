@@ -162,7 +162,7 @@ func Run() {
 				})
 
 				activation := fmt.Sprintf("%s at %s (%s - %dft)", v.ActivatorCallsign, v.SummitCode, v.SummitName, v.AltFt)
-				transition := tracker.Transition("SOTA|"+activation, SpotStatus{QRT: qrt, Type: v.Type})
+				transition := tracker.Transition("SOTA|"+activation, SpotStatus{QRT: qrt})
 				message := fmt.Sprintf("%s at %s (%s - %dft/%dm) on %.3fMHz %s [%s]", v.ActivatorCallsign, v.SummitCode, v.SummitName, v.AltFt, v.AltM, v.Frequency, v.Mode, v.Comments)
 				if qrt {
 					message += " QRT"

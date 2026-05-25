@@ -120,14 +120,12 @@ func IsQRT(comment string) bool {
 }
 
 // SpotStatus captures the bits of a spot we watch for transitions: QRT (from
-// comment for POTA, from comment or Type for SOTA) and the SOTA Type field
-// itself, so a NORMAL↔TEST flip is also caught.
+// comment for POTA, from comment or Type for SOTA).
 //
 // QRT is latched inside StatusTracker once observed; see Transition for the
 // rationale.
 type SpotStatus struct {
-	QRT  bool
-	Type string
+	QRT bool
 }
 
 // StatusTracker remembers the last-seen status per activation key and reports

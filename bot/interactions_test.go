@@ -263,16 +263,6 @@ func TestStatusTracker_Transition(t *testing.T) {
 	if tr.Transition("k", SpotStatus{QRT: true}) {
 		t.Error("QRT after latch should not be a fresh transition")
 	}
-	// SOTA Type change with QRT unchanged still counts as a transition.
-	tr.Transition("sota", SpotStatus{QRT: false, Type: "NORMAL"})
-	if !tr.Transition("sota", SpotStatus{QRT: false, Type: "TEST"}) {
-		t.Error("Type change should be a transition even when QRT is unchanged")
-	}
-	// Type changes still fire even when QRT is latched.
-	tr.Transition("sotaQRT", SpotStatus{QRT: true, Type: "NORMAL"})
-	if !tr.Transition("sotaQRT", SpotStatus{QRT: false, Type: "TEST"}) {
-		t.Error("Type change should fire even when QRT is latched")
-	}
 	// Different keys are independent.
 	if tr.Transition("other", SpotStatus{QRT: true}) {
 		t.Error("first observation under a new key should not be a transition")
@@ -282,5 +272,64 @@ func TestStatusTracker_Transition(t *testing.T) {
 func TestDedupAndSortSpots_EmptyInput(t *testing.T) {
 	if got := dedupAndSortSpots(nil, 10); len(got) != 0 {
 		t.Errorf("expected empty result for nil input, got %d entries", len(got))
+	}
+}
+
+func TestAlternatingSpots_FlipFlop(t *testing.T) {
+	tracker := NewStatusTracker()
+	limiter := NewRateLimiter()
+
+	origThrottle := ThrottleTime
+	ThrottleTime = 4 * time.Hour
+	defer func() { ThrottleTime = origThrottle }()
+
+	activationKey := "KO6EQN at W7A/CS-026 (Summit Mountain - 7797ft)"
+
+	var memory []DisplaySpot
+	prints := 0
+
+	t0 := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+
+	for i := range 7 {
+		// sotl.as spot
+		memory = append(memory, DisplaySpot{
+			Source:    "SOTA",
+			RawTime:   t0.Add(time.Duration(i*4) * time.Minute),
+			Location:  "W7A/CS-026 (Summit Mountain - 7797ft)",
+			Frequency: "14.060MHz",
+			Mode:      "CW",
+			Comment:   "sotl.as",
+		})
+
+		if tracker.Transition("SOTA|"+activationKey, SpotStatus{QRT: false}) || limiter.Allow(activationKey) {
+			prints++
+		}
+
+		// RBNHole spot
+		memory = append(memory, DisplaySpot{
+			Source:    "SOTA",
+			RawTime:   t0.Add(time.Duration(i*4+2) * time.Minute),
+			Location:  "W7A/CS-026 (Summit Mountain - 7797ft)",
+			Frequency: "14.058MHz",
+			Mode:      "CW",
+			Comment:   "[RBNHole] at W6YX 20 WPM 12 dB SNR",
+		})
+
+		if tracker.Transition("SOTA|"+activationKey, SpotStatus{QRT: false}) || limiter.Allow(activationKey) {
+			prints++
+		}
+	}
+
+	deduped := dedupAndSortSpots(memory, 10)
+
+	// Since frequency is part of the dedup key, we expect 2 distinct entries in memory.
+	if len(deduped) != 2 {
+		t.Errorf("expected 2 distinct entries in memory, got %d", len(deduped))
+	}
+
+	// Because the StatusTracker/RateLimiter key does not include frequency,
+	// we expect exactly 1 broadcast to Discord.
+	if prints != 1 {
+		t.Errorf("expected exactly 1 print, got %d", prints)
 	}
 }
